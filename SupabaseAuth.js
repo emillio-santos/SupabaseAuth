@@ -1,323 +1,250 @@
 /**
- * SupabaseAuth.js v1.0.2
- * Biblioteca de autenticação robusta para Supabase + Bubble.io
+ * SupabaseAuth.js v1.0.1
+ * Biblioteca de autenticação robusta para integração Supabase + Bubble.io
  */
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-class SupabaseAuth {
-
-  constructor() {
-
-    this._version = "1.0.2";
-
-    this._config = {
+// Verifica se a biblioteca já não foi anexada ao escopo global
+if (typeof window.SupabaseAuth === "undefined") {
+  window.SupabaseAuth = (() => {
+    // --- ESTADO PRIVADO DA BIBLIOTECA ---
+    const _version = "1.0.1";
+    
+    const _config = {
       url: "",
       anonKey: "",
       loginPage: "login",
       homePage: "inicio",
-      redirectTo: null,
       debug: false,
       storageKey: "supabase.auth.token"
     };
 
-    this._client = null;
-
-    this._state = {
+    const _state = {
       initialized: false,
-      loading: false,
-      lastEvent: null
+      session: null,
+      user: null,
+      isLogged: false
     };
 
-    this._listeners = {};
-  }
+    let _client = null;
+    const _eventListeners = new Map();
 
-  // -------------------------
-  // LOG
-  // -------------------------
-  _log(msg, type = "info") {
-    if (!this._config.debug) return;
-    console.log(`[SupabaseAuth] ${msg}`);
-  }
-
-  _error(msg, err) {
-    console.error(`[SupabaseAuth ERROR] ${msg}`, err);
-  }
-
-  // -------------------------
-  // STORAGE (compatível plugin)
-  // -------------------------
-  _syncStorage(session) {
-
-    if (!session) {
-      localStorage.removeItem(this._config.storageKey);
-      return;
-    }
-
-    localStorage.setItem(
-      this._config.storageKey,
-      JSON.stringify({
-        currentSession: session,
-        expiresAt: session?.expires_at
-      })
-    );
-  }
-
-  // -------------------------
-  // BUBBLE
-  // -------------------------
-  _notify(event, session) {
-
-    this._state.lastEvent = event;
-
-    if (typeof window.bubble_fn_auth === "function") {
-      window.bubble_fn_auth(event);
-    }
-
-    if (typeof window.bubble_fn_session === "function") {
-      window.bubble_fn_session(JSON.stringify({
-        currentSession: session,
-        expiresAt: session?.expires_at
-      }));
-    }
-
-    if (typeof window.bubble_fn_user === "function") {
-      window.bubble_fn_user(JSON.stringify(session?.user || null));
-    }
-  }
-
-  // -------------------------
-  // INIT
-  // -------------------------
-  async init(config = {}) {
-
-    if (this._state.initialized) return true;
-
-    this._config = { ...this._config, ...config };
-
-    this._client = createClient(
-      this._config.url,
-      this._config.anonKey,
-      {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true
+    // --- UTILS & HELPERS ---
+    const _utils = {
+      log(message, type = "success") {
+        if (!_config.debug) return;
+        const symbols = { success: "✔", error: "❌", info: "ℹ" };
+        console.log(`%c${symbols[type] || "•"} ${message}`, "color: #3b82f6; font-weight: bold;");
+      },
+      error(message, errorObj = null) {
+        if (_config.debug) {
+          console.error(`❌ Erro em SupabaseAuth: ${message}`, errorObj);
+        }
+        _utils.trigger("ERROR", { message, error: errorObj });
+      },
+      trigger(event, data) {
+        if (_eventListeners.has(event)) {
+          _eventListeners.get(event).forEach(callback => {
+            try { callback(data); } catch (e) { console.error(e); }
+          });
         }
       }
-    );
+    };
 
-    this._state.initialized = true;
+    // --- BUBBLE INTEGRATION ---
+    const _bubble = {
+      sync(authEvent, session) {
+        _state.session = session;
+        _state.user = session?.user || null;
+        _state.isLogged = !!session;
 
-    this._log("SDK iniciado");
+        if (typeof window.bubble_fn_auth === "function") {
+          window.bubble_fn_auth(authEvent);
+        }
+        if (typeof window.bubble_fn_session === "function") {
+          window.bubble_fn_session(session);
+        }
+        if (typeof window.bubble_fn_user === "function") {
+          window.bubble_fn_user(_state.user);
+        }
 
-    // Listener auth
-    this._client.auth.onAuthStateChange((event, session) => {
-
-      this._syncStorage(session);
-      this._notify(event, session);
-
-      this._log(`Evento: ${event}`);
-
-    });
-
-    // Restaurar sessão
-    const { data: { session } } =
-      await this._client.auth.getSession();
-
-    if (session) {
-      this._syncStorage(session);
-      this._notify("INITIAL_SESSION", session);
-      this._log("Sessão restaurada");
-    }
-
-    return true;
-  }
-
-  // -------------------------
-  // READY
-  // -------------------------
-  async ready() {
-    if (!this._state.initialized) {
-      throw new Error("SupabaseAuth não inicializado");
-    }
-  }
-
-  // -------------------------
-  // SESSION
-  // -------------------------
-  async getSession() {
-    const { data: { session } } =
-      await this._client.auth.getSession();
-    return session;
-  }
-
-  async getUser() {
-    const { data: { user } } =
-      await this._client.auth.getUser();
-    return user;
-  }
-
-  async isLogged() {
-    const session = await this.getSession();
-    return !!session;
-  }
-
-  // -------------------------
-  // REDIRECTS
-  // -------------------------
-  async requireAuth() {
-
-    const session = await this.getSession();
-
-    if (!session) {
-      window.location.href = "/" + this._config.loginPage;
-      return false;
-    }
-
-    return true;
-  }
-
-  async redirectIfLogged() {
-
-    const session = await this.getSession();
-
-    if (session) {
-      window.location.href = "/" + this._config.homePage;
-      return true;
-    }
-
-    return false;
-  }
-
-  // -------------------------
-  // LOGIN GOOGLE
-  // -------------------------
-  async loginGoogle() {
-
-    return await this._client.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo:
-          this._config.redirectTo ||
-          window.location.origin + "/" + this._config.homePage
+        _utils.log("Bubble sincronizado", "success");
       }
-    });
-  }
-
-  // -------------------------
-  // LOGIN EMAIL
-  // -------------------------
-  async loginEmail(email, password) {
-
-    const { data, error } =
-      await this._client.auth.signInWithPassword({
-        email,
-        password
-      });
-
-    if (error) {
-      this._error("Login email", error);
-      return { success: false, message: error.message };
-    }
-
-    return {
-      success: true,
-      session: data.session,
-      user: data.user
     };
-  }
 
-  // -------------------------
-  // SIGNUP
-  // -------------------------
-  async signup(email, password, metadata = {}) {
-
-    const { data, error } =
-      await this._client.auth.signUp({
-        email,
-        password,
-        options: { data: metadata }
-      });
-
-    if (error) {
-      return { success: false, message: error.message };
-    }
-
-    return {
-      success: true,
-      user: data.user,
-      session: data.session
+    // --- STORAGE ---
+    const _storage = {
+      syncFromSupabase(session) {
+        if (!session) {
+          localStorage.removeItem(_config.storageKey);
+          return;
+        }
+        localStorage.setItem(_config.storageKey, JSON.stringify(session));
+      }
     };
-  }
 
-  // -------------------------
-  // LOGOUT (corrigido)
-  // -------------------------
-  async logout() {
+    // --- REDIRECTS ---
+    const _redirect = {
+      to(page) {
+        if (typeof window !== "undefined") {
+          window.location.href = `/${page}`;
+        }
+      }
+    };
 
-    const { error } =
-      await this._client.auth.signOut();
+    // --- API PÚBLICA ---
+    return {
+      get version() { return _version; },
+      get config() { return { ..._config }; },
+      get state() { return { ..._state }; },
+      get client() { return _client; },
 
-    if (error) {
-      this._error("Logout", error);
-      return { success: false, message: error.message };
-    }
+      async init(options = {}) {
+        // Se já estiver inicializado, não tenta criar o cliente novamente
+        if (_state.initialized) {
+          _utils.log("SDK já estava inicializado. Ignorando re-inicialização.", "info");
+          return true;
+        }
 
-    this._syncStorage(null);
+        if (typeof window === "undefined" || !window.supabase) {
+          _utils.error("O SDK do Supabase não foi encontrado na janela global (window.supabase).");
+          return false;
+        }
 
-    return { success: true };
-  }
+        Object.assign(_config, options);
 
-  // -------------------------
-  // PASSWORD RESET
-  // -------------------------
-  async recoverPassword(email) {
+        try {
+          _client = window.supabase.createClient(_config.url, _config.anonKey, {
+            auth: {
+              storageKey: _config.storageKey,
+              autoRefreshToken: true,
+              persistSession: true
+            }
+          });
 
-    const { error } =
-      await this._client.auth.resetPasswordForEmail(email, {
-        redirectTo:
-          window.location.origin + "/" + this._config.loginPage
-      });
+          _state.initialized = true;
+          _utils.log("SDK iniciado", "success");
 
-    if (error) {
-      return { success: false, message: error.message };
-    }
+          _client.auth.onAuthStateChange((event, session) => {
+            _storage.syncFromSupabase(session);
+            _bubble.sync(event, session);
+            
+            if (event === "SIGNED_IN") _utils.log("Login realizado", "success");
+            if (event === "SIGNED_OUT") _utils.log("Logout", "success");
+            if (event === "TOKEN_REFRESHED") _utils.log("Token renovado", "success");
 
-    return { success: true };
-  }
+            _utils.trigger(event, session);
+          });
 
-  async updatePassword(password) {
+          const { data: { session } } = await _client.auth.getSession();
+          if (session) {
+            _utils.log("Sessão restaurada", "success");
+            _utils.trigger("INITIALIZED", session);
+          }
 
-    const { error } =
-      await this._client.auth.updateUser({
-        password
-      });
+          return true;
+        } catch (err) {
+          _utils.error("Falha ao inicializar o SupabaseAuth", err);
+          return false;
+        }
+      },
 
-    if (error) {
-      return { success: false, message: error.message };
-    }
+      on(event, callback) {
+        if (typeof callback !== "function") return;
+        if (!_eventListeners.has(event)) {
+          _eventListeners.set(event, []);
+        }
+        _eventListeners.get(event).push(callback);
+      },
 
-    return { success: true };
-  }
+      getSession() { return _state.session; },
+      getUser() { return _state.user; },
+      isLogged() { return _state.isLogged; },
 
-  async updateUser(metadata = {}) {
+      requireAuth() {
+        if (!_state.isLogged) {
+          _utils.log(`Acesso negado. Redirecionando para: ${_config.loginPage}`, "info");
+          _redirect.to(_config.loginPage);
+          return false;
+        }
+        return true;
+      },
 
-    const { error } =
-      await this._client.auth.updateUser({
-        data: metadata
-      });
+      redirectIfLogged() {
+        if (_state.isLogged) {
+          _utils.log(`Usuário já logado. Redirecionando para: ${_config.homePage}`, "info");
+          _redirect.to(_config.homePage);
+          return true;
+        }
+        return false;
+      },
 
-    if (error) {
-      return { success: false, message: error.message };
-    }
+      async login(provider) {
+        if (!_state.initialized) return _utils.error("SDK não inicializado.");
+        
+        const { data, error } = await _client.auth.signInWithOAuth({
+          provider: provider,
+          options: {
+            redirectTo: window.location.origin + "/" + _config.homePage
+          }
+        });
 
-    return { success: true };
-  }
+        if (error) { _utils.error(`Erro no login via ${provider}`, error); throw error; }
+        return data;
+      },
 
+      async loginGoogle() { return this.login("google"); },
+
+      async loginEmail(email, password) {
+        if (!_state.initialized) return _utils.error("SDK não inicializado.");
+        
+        const { data, error } = await _client.auth.signInWithPassword({ email, password });
+        if (error) { _utils.error("Erro no login por e-mail", error); throw error; }
+        return data;
+      },
+
+      async signup(email, password, userMetadata = {}) {
+        if (!_state.initialized) return _utils.error("SDK não inicializado.");
+        
+        const { data, error } = await _client.auth.signUp({
+          email,
+          password,
+          options: { data: userMetadata }
+        });
+        if (error) { _utils.error("Erro no cadastro", error); throw error; }
+        return data;
+      },
+
+      async logout() {
+        if (!_state.initialized) return _utils.error("SDK não inicializado.");
+        const { error } = await _error = await _client.auth.signOut();
+        if (error) { _utils.error("Erro ao deslogar", error); throw error; }
+      },
+
+      async recoverPassword(email) {
+        if (!_state.initialized) return _utils.error("SDK não inicializado.");
+        
+        const { data, error } = await _client.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin + "/" + _config.loginPage
+        });
+        if (error) { _utils.error("Erro ao solicitar recuperação de senha", error); throw error; }
+        return data;
+      },
+
+      async updatePassword(newPassword) {
+        if (!_state.initialized) return _utils.error("SDK não inicializado.");
+        
+        const { data, error } = await _client.auth.updateUser({ password: newPassword });
+        if (error) { _utils.error("Erro ao atualizar senha", error); throw error; }
+        return data;
+      },
+
+      async updateUser(metadata = {}) {
+        if (!_state.initialized) return _utils.error("SDK não inicializado.");
+        
+        const { data, error } = await _client.auth.updateUser({ data: metadata });
+        if (error) { _utils.error("Erro ao atualizar metadados do usuário", error); throw error; }
+        return data;
+      }
+    };
+  })();
 }
-
-// -------------------------
-// EXPORT GLOBAL
-// -------------------------
-window.SupabaseAuth = new SupabaseAuth();
