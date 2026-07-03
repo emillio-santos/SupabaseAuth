@@ -1,13 +1,12 @@
 /**
- * SupabaseAuth.js v1.0.1
+ * SupabaseAuth.js v1.0.2
  * Biblioteca de autenticação robusta para integração Supabase + Bubble.io
  */
 
-// Verifica se a biblioteca já não foi anexada ao escopo global
 if (typeof window.SupabaseAuth === "undefined") {
   window.SupabaseAuth = (() => {
     // --- ESTADO PRIVADO DA BIBLIOTECA ---
-    const _version = "1.0.1";
+    const _version = "1.0.2";
     
     const _config = {
       url: "",
@@ -99,7 +98,6 @@ if (typeof window.SupabaseAuth === "undefined") {
       get client() { return _client; },
 
       async init(options = {}) {
-        // Se já estiver inicializado, não tenta criar o cliente novamente
         if (_state.initialized) {
           _utils.log("SDK já estava inicializado. Ignorando re-inicialização.", "info");
           return true;
@@ -216,7 +214,7 @@ if (typeof window.SupabaseAuth === "undefined") {
 
       async logout() {
         if (!_state.initialized) return _utils.error("SDK não inicializado.");
-        const { error } = await _error = await _client.auth.signOut();
+        const { error } = await _client.auth.signOut();
         if (error) { _utils.error("Erro ao deslogar", error); throw error; }
       },
 
@@ -248,3 +246,20 @@ if (typeof window.SupabaseAuth === "undefined") {
     };
   })();
 }
+```
+eof
+
+---
+
+### Como aplicar a correção agora?
+
+1. Substitua o código do seu arquivo local `SupabaseAuth.js` com o código gerado acima.
+2. Salve o arquivo e faça o envio da nova versão corrigida para o GitHub abrindo seu terminal e rodando:
+   ```bash
+   git add .
+   git commit -m "fix: corrigindo erro de digitacao no logout"
+   git push origin main
+   ```
+3. Abra seu navegador em aba anônima (ou force a limpeza de cache) para carregar a versão corrigida da CDN e recarregue a página de testes do Bubble.
+
+Tudo deve iniciar limpo e sem erros de sintaxe no console agora!
