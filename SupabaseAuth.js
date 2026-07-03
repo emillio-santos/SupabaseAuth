@@ -27,7 +27,6 @@ if (typeof window.SupabaseAuth === "undefined") {
     let _client = null;
     const _eventListeners = new Map();
 
-    // --- UTILS & HELPERS ---
     const _utils = {
       log(message, type = "success") {
         if (!_config.debug) return;
@@ -49,7 +48,6 @@ if (typeof window.SupabaseAuth === "undefined") {
       }
     };
 
-    // --- BUBBLE INTEGRATION ---
     const _bubble = {
       sync(authEvent, session) {
         _state.session = session;
@@ -70,7 +68,6 @@ if (typeof window.SupabaseAuth === "undefined") {
       }
     };
 
-    // --- STORAGE ---
     const _storage = {
       syncFromSupabase(session) {
         if (!session) {
@@ -81,7 +78,6 @@ if (typeof window.SupabaseAuth === "undefined") {
       }
     };
 
-    // --- REDIRECTS ---
     const _redirect = {
       to(page) {
         if (typeof window !== "undefined") {
@@ -90,7 +86,6 @@ if (typeof window.SupabaseAuth === "undefined") {
       }
     };
 
-    // --- API PÚBLICA ---
     return {
       get version() { return _version; },
       get config() { return { ..._config }; },
@@ -251,15 +246,26 @@ eof
 
 ---
 
-### Como aplicar a correção agora?
+### Como contornar o problema da CDN imediatamente?
 
-1. Substitua o código do seu arquivo local `SupabaseAuth.js` com o código gerado acima.
-2. Salve o arquivo e faça o envio da nova versão corrigida para o GitHub abrindo seu terminal e rodando:
-   ```bash
-   git add .
-   git commit -m "fix: corrigindo erro de digitacao no logout"
-   git push origin main
-   ```
-3. Abra seu navegador em aba anônima (ou force a limpeza de cache) para carregar a versão corrigida da CDN e recarregue a página de testes do Bubble.
+Como o jsDelivr vai demorar para notar que o arquivo mudou, use uma destas **3 soluções** para o seu teste funcionar agora mesmo:
 
-Tudo deve iniciar limpo e sem erros de sintaxe no console agora!
+#### Solução A: Usar a CDN de Desenvolvimento (Reflete na hora!)
+Durante o desenvolvimento, use a ferramenta **Raw GitHack**, que não guarda cache por muito tempo. Substitua a tag `<script>` no seu header do Bubble por esta:
+
+```html
+<script src="https://raw.githack.com/emillio-santos/SupabaseAuth/main/SupabaseAuth.js"></script>
+```
+*Sempre que você der `git push origin main`, essa URL atualizará no seu navegador em menos de 2 minutos!*
+
+#### Solução B: Limpar o cache do jsDelivr manualmente
+Você pode forçar o jsDelivr a apagar a versão antiga do servidor deles usando a ferramenta oficial de limpeza:
+1. Acesse: **[jsdelivr.com/tools/purge](https://www.jsdelivr.com/tools/purge)**
+2. Cole a URL original lá:
+   `https://cdn.jsdelivr.net/gh/emillio-santos/SupabaseAuth@main/SupabaseAuth.js`
+3. Clique em **Purge**. Pronto! Eles limpam o cache global instantaneamente.
+
+#### Solução C: Adicionar um parâmetro de versão no link
+Você também pode "enganar" o cache adicionando uma interrogação no final do link antigo dentro do Header do Bubble:
+```html
+<script src="https://cdn.jsdelivr.net/gh/emillio-santos/SupabaseAuth@main/SupabaseAuth.js?v=1.0.2"></script>
